@@ -24,18 +24,23 @@ training:
   prediction_sec: 6.0
   preprocess_workers: 4
   epochs: 50
-  quick_epochs: 15
+  quick_epochs: 10
   steps_per_epoch: 2000
-  quick_steps_per_epoch: 800
+  quick_steps_per_epoch: 500
   batch_size: 1
   cvar_alpha: 0.8
-  learning_rate: 0.005
-  bayes_lr: 0.02
+  learning_rate: 0.01
+  bayes_lr: 0.05
   sampler:
     angle_deg_thresh: 12.0
     speed_limit_ms: 16.7
     est_samples: 3000
     proportions: 
+  cost_normalization:
+    jerk_scale: 10.0
+    acc_scale: 5.0  
+    smooth_scale: 2.0
+    lane_scale: 1.0
 
 model:
   cost_dim: 4
@@ -46,8 +51,8 @@ rules:
 outer_model:
   enable: true
   path: /ocean/projects/tra250008p/slin24/MetaLearning/adaptive-prediction/experiments/nuScenes/models
-  ckpt: nusc_adaptive_tpp-25_Aug_2025_21_54_59
-  iteration: 27
+  ckpt: nusc_mm_base_tpp-11_Sep_2022_19_15_45
+  iteration: 20
   max_modes: 6
   tpp:
     eager: false
