@@ -56,93 +56,41 @@ class TPPRuntime:
             # Create fresh registrar and model
             registrar = ModelRegistrar(model_dir, self.device)
             model = Trajectron(registrar, hyperparams, device=self.device, log_writer=None)
-            
-            # Method 2a: If checkpoint is a ModuleDict directly
+
+            # 1) Check for state_dict format used by official Trajectron++ saves
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                try:
+                    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
+                    self.model = model
+                    self.model.eval()
+                    self.loaded = True
+                    print("✓ TPP loaded via model_state_dict")
+                    return
+                except Exception as e:
+                    print(f"  Failed to load model_state_dict: {e}")
+
+            # 2) Direct ModuleDict checkpoint
             if isinstance(checkpoint, nn.ModuleDict):
-                print("Checkpoint is ModuleDict format")
                 registrar.model_dict = checkpoint.to(self.device)
                 self.model = model
                 self.model.eval()
                 self.loaded = True
                 print("✓ TPP loaded via ModuleDict assignment")
                 return
-                
-            # Method 2b: If checkpoint is a dict of state_dicts
-            elif isinstance(checkpoint, dict):
-                print("Checkpoint is dict format, converting...")
-                
-                # Check if it's a dict of modules vs dict of state_dicts
-                first_key = next(iter(checkpoint.keys()))
-                first_value = checkpoint[first_key]
-                
-                if isinstance(first_value, nn.Module):
-                    # Dict of modules -> convert to ModuleDict
-                    model_dict = nn.ModuleDict(checkpoint)
+
+            # 3) Plain dictionary of modules -> convert to ModuleDict
+            if isinstance(checkpoint, dict):
+                model_dict = checkpoint.get("model_dict", checkpoint)
+                if isinstance(model_dict, dict) and not isinstance(model_dict, nn.ModuleDict):
+                    model_dict = nn.ModuleDict(model_dict)
+                if isinstance(model_dict, nn.ModuleDict):
                     registrar.model_dict = model_dict.to(self.device)
                     self.model = model
                     self.model.eval()
                     self.loaded = True
-                    print("✓ TPP loaded via dict-of-modules conversion")
+                    print("✓ TPP loaded via dict->ModuleDict conversion")
                     return
-                    
-                elif isinstance(first_value, dict):
-                    # Dict of state_dicts -> need to create modules first
-                    print("Checkpoint contains state_dicts, attempting reconstruction...")
-                    
-                    # Initialize the model first to create the architecture
-                    model.eval()  # This should create the basic structure
-                    
-                    # Try to load state_dicts into existing modules
-                    if hasattr(registrar, 'model_dict') and isinstance(registrar.model_dict, nn.ModuleDict):
-                        loaded_any = False
-                        for name, state_dict in checkpoint.items():
-                            if name in registrar.model_dict:
-                                try:
-                                    registrar.model_dict[name].load_state_dict(state_dict, strict=False)
-                                    loaded_any = True
-                                    print(f"  Loaded state_dict for {name}")
-                                except Exception as e:
-                                    print(f"  Failed to load {name}: {e}")
-                        
-                        if loaded_any:
-                            self.model = model
-                            self.model.eval()
-                            self.loaded = True
-                            print("✓ TPP loaded via state_dict loading")
-                            return
-                    
-                    # If that failed, try creating a new ModuleDict
-                    # This is a last resort - create empty modules and load weights
-                    model_dict = nn.ModuleDict()
-                    for name, state_dict in checkpoint.items():
-                        try:
-                            # Try to infer module type from state_dict structure
-                            # This is heuristic and may not work for all cases
-                            if 'weight' in state_dict and 'bias' in state_dict:
-                                # Looks like a linear layer
-                                weight_shape = state_dict['weight'].shape
-                                if len(weight_shape) == 2:
-                                    module = nn.Linear(weight_shape[1], weight_shape[0])
-                                else:
-                                    continue  # Skip unknown architectures
-                            else:
-                                continue  # Skip modules we can't reconstruct
-                            
-                            module.load_state_dict(state_dict, strict=False)
-                            model_dict[name] = module
-                            print(f"  Reconstructed module {name}")
-                        except Exception as e:
-                            print(f"  Failed to reconstruct {name}: {e}")
-                            continue
-                    
-                    if len(model_dict) > 0:
-                        registrar.model_dict = model_dict.to(self.device)
-                        self.model = model
-                        self.model.eval()
-                        self.loaded = True
-                        print(f"✓ TPP loaded via module reconstruction ({len(model_dict)} modules)")
-                        return
-            
+
             print("All manual loading methods failed")
             
         except Exception as e:
